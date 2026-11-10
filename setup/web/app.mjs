@@ -1,4 +1,4 @@
-import { defaults, events } from "/lib/settings.mjs";
+import { ALL_WORKERS, defaults, events } from "/lib/settings.mjs";
 import { example } from "/lib/examples.mjs";
 import { matchingRule, messageFor, parseWebhookBody, payloadFor } from "/lib/notifications.mjs";
 
@@ -86,13 +86,27 @@ function renderRules() {
       };
       head.append(remove);
     }
+    const scope = element("label", "Apply to");
+    const select = element("select");
+    select.append(new Option("All Workers", ALL_WORKERS), new Option("Specific Worker", "specific"));
+    select.value = rule.worker === ALL_WORKERS ? ALL_WORKERS : "specific";
+    scope.append(select);
+    const workerField = field("Worker name", rule.worker === ALL_WORKERS ? "" : rule.worker, "checkout-api", (value) => {
+      rule.worker = value.trim();
+      activeRule = index;
+    });
+    const workerInput = workerField.querySelector("input");
+    workerField.hidden = select.value === ALL_WORKERS;
+    select.onchange = () => {
+      workerField.hidden = select.value === ALL_WORKERS;
+      rule.worker = workerField.hidden ? ALL_WORKERS : workerInput.value.trim();
+      activeRule = index;
+      renderPreview();
+    };
     const pair = element("div", undefined, "pair");
-    pair.append(
-      field("Worker name", rule.worker, "checkout-api", (value) => { rule.worker = value.trim(); activeRule = index; }),
-      field("Environment label", rule.environment, "Production", (value) => { rule.environment = value; activeRule = index; }),
-    );
+    pair.append(scope, field("Environment label", rule.environment, "Production", (value) => { rule.environment = value; activeRule = index; }));
     const controls = element("div", undefined, "rule-controls");
-    controls.append(pair, field("Branch filter for builds and deploys", rule.branch, "All branches", (value) => { rule.branch = value.trim(); activeRule = index; }));
+    controls.append(pair, workerField, field("Branch filter for builds and deploys", rule.branch, "All branches", (value) => { rule.branch = value.trim(); activeRule = index; }));
     const groups = element("div", undefined, "event-groups");
     for (const [label, pattern] of [["Builds and deploys", /^(build|deployment)\./], ["Runtime and jobs", /^(runtime|scheduled)\./]]) {
       const fieldset = element("fieldset");
@@ -124,7 +138,8 @@ function renderPreview() {
   const active = settings.rules[activeRule];
   const type = $("scenario").value || "build.failed";
   const config = currentSettings();
-  const event = example(type, active.worker || "checkout-api", active.branch || "main");
+  const worker = active.worker === ALL_WORKERS ? "checkout-api" : active.worker;
+  const event = example(type, worker || "checkout-api", active.branch || "main");
   const rule = matchingRule(config, event);
   const message = messageFor(config, event, rule ?? active);
   const container = $("preview");
@@ -301,6 +316,7 @@ async function start() {
     $("token").value = "demo-token";
     $("webhook").value = "https://discord.com/api/webhooks/123/example";
     settings.rules[0].branch = "main";
+    settings.rules[0].environment = "Production";
     $("check-details").textContent = "Try the installation checks and a test message with sample data.";
   }
   renderRules();
@@ -312,10 +328,10 @@ document.querySelectorAll("[data-destination]").forEach((button) => {
   button.onclick = () => { settings.destination = button.dataset.destination; updateDestination(); };
 });
 $("add-rule").onclick = () => {
-  settings.rules.push({ worker: "", branch: "", environment: "", events: ["build.failed"] });
+  settings.rules.push({ worker: ALL_WORKERS, branch: "", environment: "", events: ["build.failed"] });
   activeRule = settings.rules.length - 1;
   renderRules();
-  $("rule-list").lastElementChild.querySelector("input").focus();
+  $("rule-list").lastElementChild.querySelector("select").focus();
   renderPreview();
 };
 for (const id of ["style", "role", "scenario"]) $(id).addEventListener("input", renderPreview);

@@ -8,7 +8,7 @@ import collector from "../src/tail.ts";
 
 const config = parseSettings({
   ...defaults,
-  rules: [{ ...defaults.rules[0], branch: "main", events: ["build.failed", "runtime.exception", "scheduled.failed"] }],
+  rules: [{ ...defaults.rules[0], worker: "checkout-api", branch: "main", environment: "Production", events: ["build.failed", "runtime.exception", "scheduled.failed"] }],
 });
 const webhook = "https://discord.com/api/webhooks/123/example";
 const report = { source: "notifier.report", type: "scheduled.failed", worker: "checkout-api", job: "Invoices", schedule: "0 9 * * *" };
@@ -24,6 +24,16 @@ test("routes build branches and runtime events and normalizes canceled builds", 
   assert.equal(matchingRule(config, { worker: "checkout-api", type: "runtime.exception" })?.environment, "Production");
   assert.equal(parseReport({ type: "deployment.succeeded", worker: "checkout-api" }), null);
   assert.equal(parseReport(report).job, "Invoices");
+});
+
+test("all Workers rules accept other Workers and defer to matching specific rules", () => {
+  const settings = parseSettings({ ...defaults, rules: [...defaults.rules, { ...config.rules[0], environment: "Checkout" }] });
+  assert.equal(matchingRule(settings, example("build.failed", "billing-api", "main"))?.worker, "*");
+  assert.equal(matchingRule(settings, example("build.failed", "checkout-api", "main"))?.environment, "Checkout");
+  assert.equal(matchingRule(settings, example("build.failed", "checkout-api", "preview"))?.worker, "*");
+  for (const worker of [settings.name, `${settings.name}-tail`]) {
+    assert.equal(matchingRule(settings, example("build.failed", worker, "main")), undefined);
+  }
 });
 
 test("native payloads escape untrusted markup and custom JSON preserves structured fields", () => {

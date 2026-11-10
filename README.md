@@ -29,13 +29,15 @@ Pick a destination and an example event to see how the message changes. You can 
    npm run setup
    ```
 
-4. **Choose what to send.** Enter the exact name of an existing Worker, choose events, and preview the result. Add rules to watch more Workers. For builds and deployments, a blank branch field matches every branch. Use an environment label that makes sense to your team.
+4. **Choose what to send.** Leave **All Workers** selected to cover your account, or choose **Specific Worker** and enter its exact name. Pick your events and preview the result. For builds and deployments, a blank branch field matches every branch. Use an environment label that makes sense to your team.
 5. **Review and install.** Enter the account ID, token, and destination URL. Select **Check account access** to check the account and resource names, then **Install notifier** to apply the plan.
 6. **Verify your destination.** Open **Diagnostics → Send test message**, then look for **Test notification** in your channel or endpoint.
 
 ![Setup review showing account fields, masked demo credentials, and the Cloudflare installation plan](docs/screenshots/setup-review.png)
 
 You can close the setup app after installation. Cloudflare keeps delivering events. To edit or resume an installation, run setup again from the same directory and enter the credentials for that installation. For a second destination, use a different installation name. Open it again with `npm run setup -- --name YOUR_INSTALLATION`.
+
+With **All Workers**, setup subscribes to builds for the Workers present in your account. Run setup again after creating a Worker to subscribe to its builds. A matching **Specific Worker** rule takes precedence over an **All Workers** rule.
 
 ## What can I send?
 
@@ -104,7 +106,7 @@ Messages that exhaust retries or receive a permanent rejection go to the failed-
 
 ## Terminal setup
 
-Copy [the example configuration](examples/notifier.json) to `notifier.local.json` and fill in your account and Worker. Provide `CLOUDFLARE_API_TOKEN` and `NOTIFIER_WEBHOOK_URL` through your shell or CI secret store. For custom webhooks, set `NOTIFIER_WEBHOOK_HEADERS` and `NOTIFIER_WEBHOOK_BODY` as JSON when needed. For HTTPS reporting, set `NOTIFIER_REPORT_TOKEN`.
+Copy [the example configuration](examples/notifier.json) to `notifier.local.json` and fill in your account ID. Set a rule’s `worker` to `"*"` for **All Workers** or to a Worker name for **Specific Worker**. Provide `CLOUDFLARE_API_TOKEN` and `NOTIFIER_WEBHOOK_URL` through your shell or CI secret store. For custom webhooks, set `NOTIFIER_WEBHOOK_HEADERS` and `NOTIFIER_WEBHOOK_BODY` as JSON when needed. For HTTPS reporting, set `NOTIFIER_REPORT_TOKEN`.
 
 ```sh
 npm run plan

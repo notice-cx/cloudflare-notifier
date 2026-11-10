@@ -7,9 +7,9 @@
   "reportEndpoint": false,
   "rules": [
     {
-      "worker": "checkout-api",
-      "environment": "Production",
-      "branch": "main",
+      "worker": "*",
+      "environment": "",
+      "branch": "",
       "events": ["build.failed", "build.succeeded"]
     }
   ]

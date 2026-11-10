@@ -53,9 +53,7 @@ export function setupServer({ demo = false, name = "cloudflare-notifier", instal
         return;
       }
       if (request.method === "GET" && path === "/api/start") {
-        const settings = demo ? defaults : await savedSettings(name) ?? {
-          ...defaults, name, rules: [{ ...defaults.rules[0], worker: "" }],
-        };
+        const settings = demo ? defaults : await savedSettings(name) ?? { ...defaults, name };
         return json(response, 200, { settings, demo });
       }
       if (request.method !== "POST" || !path.startsWith("/api/")) return json(response, 404, { error: "Page not found." });

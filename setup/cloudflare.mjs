@@ -27,6 +27,9 @@ export function cloudflare(accountId, token, send = fetch) {
   }
 
   return {
+    async workers() {
+      return (await request("/workers/scripts")).result;
+    },
     async worker(name) {
       return (await request(`/workers/scripts/${encodeURIComponent(name)}/settings`, { missing: true }))?.result ?? null;
     },

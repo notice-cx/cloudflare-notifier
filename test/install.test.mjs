@@ -15,8 +15,9 @@ test("installation resumes after a failure and leaves credentials out of project
   t.after(() => rm(directory, { recursive: true, force: true }));
   const queues = new Map();
   const subs = [];
-  const workers = new Set(["checkout-api"]);
+  const workers = new Set(["checkout-api", "billing-api"]);
   const client = {
+    workers: async () => [...workers].map((id) => ({ id })),
     worker: async (name) => workers.has(name) ? {} : null,
     queue: async (name) => queues.get(name),
     createQueue: async (name) => {
@@ -27,7 +28,7 @@ test("installation resumes after a failure and leaves credentials out of project
     },
     subscriptions: async () => subs,
     createSubscription: async (queueId, worker, events) => {
-      subs.push({ id: "1", enabled: true, name: `notifier-${worker}`, source: { type: "workersBuilds.worker", worker_name: worker }, destination: { queue_id: queueId }, events });
+      subs.push({ id: String(subs.length + 1), enabled: true, name: `notifier-${worker}`, source: { type: "workersBuilds.worker", worker_name: worker }, destination: { queue_id: queueId }, events });
     },
     updateSubscription: async () => { assert.fail("This fixture should not need a subscription update"); },
   };
@@ -44,10 +45,15 @@ test("installation resumes after a failure and leaves credentials out of project
     assert.equal(JSON.parse(await readFile(secretFile, "utf8")).WEBHOOK_URL, credentials.webhook);
   };
   await install(settings, credentials, { directory, client, deploy });
+  assert.deepEqual(subs.map(({ source }) => source.worker_name), ["billing-api", "checkout-api"]);
+  workers.add("new-worker");
   await install(settings, credentials, { directory, client, deploy });
   assert.equal(queues.size, 2);
-  assert.equal(subs.length, 1);
+  assert.deepEqual(subs.map(({ source }) => source.worker_name), ["billing-api", "checkout-api", "new-worker"]);
   assert.equal((await preflight(settings, credentials, { directory, client })).ready, true);
+  const specific = { ...settings, rules: [{ ...settings.rules[0], worker: "checkout-api" }] };
+  const result = await preflight(specific, credentials, { directory, client: { ...client, workers: undefined } });
+  assert.deepEqual(result.plan.subscriptions.map(({ worker }) => worker), ["checkout-api"]);
   await assert.rejects(readFile(secretPath), { code: "ENOENT" });
 });
 
@@ -56,6 +62,8 @@ test("demo mode cannot call an installer and cross-origin requests are denied", 
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const origin = `http://127.0.0.1:${server.address().port}`;
+  const start = await (await fetch(origin + "/api/start")).json();
+  assert.equal(start.settings.rules[0].worker, "*");
   const send = (path, requestOrigin) => fetch(origin + path, {
     method: "POST", headers: { "content-type": "application/json", origin: requestOrigin },
     body: JSON.stringify({ settings }),

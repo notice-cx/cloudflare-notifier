@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { buildSubscriptions, parseHeaders, parseSettings, parseWebhook, runtimeWorkers } from "../lib/settings.mjs";
+import { ALL_WORKERS, buildSubscriptions, isNotifierWorker, parseHeaders, parseSettings, parseWebhook, runtimeWorkers } from "../lib/settings.mjs";
 import { parseWebhookBody } from "../lib/notifications.mjs";
 import { cloudflare } from "./cloudflare.mjs";
 
@@ -16,10 +16,19 @@ function names(settings) {
   return { worker: name, tail: `${name}-tail`, events: `${name}-events`, failed: `${name}-failed` };
 }
 
-export function planFor(settings) {
+export function planFor(settings, discoveredWorkers) {
   const resources = names(settings);
-  const subscriptions = [...buildSubscriptions(settings)].map(([worker, events]) => ({ worker, events }));
-  const runtime = runtimeWorkers(settings);
+  const subscriptions = [...buildSubscriptions(settings, discoveredWorkers)].map(([worker, events]) => ({ worker, events }));
+  const runtime = runtimeWorkers(settings, discoveredWorkers);
+  const allBuilds = buildSubscriptions(settings).has(ALL_WORKERS);
+  let buildScope = subscriptions.map(({ worker }) => worker).join(", ");
+  if (allBuilds) {
+    const count = subscriptions.length;
+    const scope = discoveredWorkers
+      ? `${count} ${count === 1 ? "Worker" : "Workers"} found in this account`
+      : "All current Workers in this account";
+    buildScope = `${scope}. Run setup again to include new Workers.`;
+  }
   return {
     resources,
     subscriptions,
@@ -27,7 +36,7 @@ export function planFor(settings) {
     steps: [
       { title: "Create or reuse the queues", detail: `${resources.events} and ${resources.failed}` },
       { title: "Deploy the notifier and save destination credentials", detail: resources.worker },
-      ...(subscriptions.length ? [{ title: "Connect Workers Builds", detail: subscriptions.map(({ worker }) => worker).join(", ") }] : []),
+      ...(subscriptions.length || allBuilds ? [{ title: "Connect Workers Builds", detail: buildScope }] : []),
       ...(runtime.length ? [{ title: "Deploy the runtime collector", detail: resources.tail }] : []),
       ...(settings.reportEndpoint ? [{ title: "Enable the authenticated reporting endpoint", detail: "POST /events on the notifier Worker" }] : []),
     ],
@@ -68,15 +77,19 @@ export async function savedSettings(name = "cloudflare-notifier", directory = pr
 }
 
 async function inspect(settings, client, dir) {
-  const plan = planFor(settings);
-  const { resources } = plan;
-  const selected = [...new Set(settings.rules.map(({ worker }) => worker))];
+  const { resources, subscriptions: requestedBuilds, runtime: requestedRuntime } = planFor(settings);
+  const needsInventory = requestedBuilds.some(({ worker }) => worker === ALL_WORKERS) || requestedRuntime.includes(ALL_WORKERS);
+  const selected = [...new Set(settings.rules.map(({ worker }) => worker))].filter((name) => name !== ALL_WORKERS);
   const [journal, worker, tail, events, failed, subdomain, monitored] = await Promise.all([
     readState(dir),
     client.worker(resources.worker), client.worker(resources.tail),
     client.queue(resources.events), client.queue(resources.failed),
     settings.reportEndpoint ? client.subdomain() : "",
-    Promise.all(selected.map(async (name) => ({ name, settings: await client.worker(name) }))),
+    needsInventory
+      ? client.workers().then((scripts) => new Map(scripts
+        .filter(({ id }) => typeof id === "string" && id && !isNotifierWorker(settings, id))
+        .map((script) => [script.id, script])))
+      : Promise.all(selected.map(async (name) => [name, await client.worker(name)])).then((entries) => new Map(entries)),
   ]);
   if (journal && journal.accountId !== settings.accountId) {
     throw new Error("This local installation belongs to another account. Choose a new installation name.");
@@ -87,10 +100,11 @@ async function inspect(settings, client, dir) {
   if (events?.consumers?.some((consumer) => consumer.type !== "worker" || consumer.script_name !== resources.worker) || failed?.consumers_total_count > 0) {
     throw new Error("One of the queues has a consumer outside this installation. Review its connections in Cloudflare.");
   }
-  const missing = monitored.filter((item) => !item.settings).map(({ name }) => name);
+  const missing = selected.filter((name) => !monitored.get(name));
   if (missing.length) throw new Error(`Worker not found in this account: ${missing.join(", ")}.`);
   if (settings.reportEndpoint && !subdomain) throw new Error("Set up a workers.dev subdomain in Cloudflare before enabling the reporting endpoint.");
   const subscriptions = events ? await client.subscriptions(events.queue_id) : [];
+  const plan = planFor(settings, needsInventory ? [...monitored.keys()].sort() : undefined);
   return { plan, worker, events, failed, tail, subdomain, subscriptions, monitored };
 }
 
@@ -114,7 +128,7 @@ function diagnostics(settings, snapshot) {
     tail: Boolean(tail),
     runtime: plan.runtime.map((worker) => ({
       worker,
-      connected: Boolean(monitored.find(({ name }) => name === worker)?.settings?.tail_consumers?.some(({ service }) => service === resources.tail)),
+      connected: Boolean(monitored.get(worker)?.tail_consumers?.some(({ service }) => service === resources.tail)),
     })),
     reportUrl: settings.reportEndpoint && subdomain ? `https://${resources.worker}.${subdomain}.workers.dev/events` : "",
     dashboard: `https://dash.cloudflare.com/${settings.accountId}/workers/services/view/${resources.worker}/production`,
