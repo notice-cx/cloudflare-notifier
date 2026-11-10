@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cloudflare-notifier-tail",
+  "main": "src/tail.ts",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": { "NOTIFIER_SETTINGS": "{}" },
+  "queues": { "producers": [{ "binding": "EVENTS", "queue": "cloudflare-notifier-events" }] }
+}

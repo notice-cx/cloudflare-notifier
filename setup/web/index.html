@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Cloudflare Notifier</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="frame masthead-inner">
+      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="2"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4m8.4-8.4a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/></svg></div>
+      <div><strong>Cloudflare Notifier</strong><small>Setup and diagnostics</small></div>
+      <span class="tag masthead-tag" id="mode">Local setup</span>
+    </div>
+    <nav class="frame navigation" aria-label="Setup">
+      <button type="button" data-page="notifications" aria-current="page">Notifications</button>
+      <button type="button" data-page="review">Setup review</button>
+      <button type="button" data-page="diagnostics">Diagnostics</button>
+    </nav>
+  </header>
+
+  <main class="frame">
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="notifications" class="page">
+      <div class="heading">
+        <div class="eyebrow">01 / Notifications</div>
+        <h1>Choose what reaches your team.</h1>
+        <p>Pick a destination and preview how each event will appear.</p>
+      </div>
+      <div class="columns">
+        <div class="settings">
+          <div>
+            <h2>Destination</h2>
+            <div class="segmented" role="group" aria-label="Destination type">
+              <button type="button" data-destination="discord" aria-pressed="true">Discord</button>
+              <button type="button" data-destination="slack" aria-pressed="false">Slack</button>
+              <button type="button" data-destination="webhook" aria-pressed="false">Webhook</button>
+            </div>
+          </div>
+          <div class="rule-heading">
+            <h2>Notification rules</h2>
+            <button type="button" id="add-rule" class="button subtle">+ Add rule</button>
+          </div>
+          <div id="rule-list" class="rule-list"></div>
+          <div class="pair">
+            <label>Message style<select id="style"><option value="detailed">Detailed</option><option value="compact">Compact</option></select></label>
+            <label id="role-field">Discord role ID<input id="role" inputmode="numeric" autocomplete="off" placeholder="Mention on failures"></label>
+          </div>
+        </div>
+        <aside class="panel preview" aria-label="Message preview">
+          <div class="panel-heading"><h2>Message preview</h2><span class="tag" id="format">Discord embed</span></div>
+          <div class="preview-inner">
+            <label>Example event<select id="scenario"></select></label>
+            <div id="preview"></div>
+            <div class="preview-caption">
+              <span id="rule-status" class="tag positive" aria-live="polite"></span>
+              <span>Sample event</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div class="action-bar"><p>Next, review the Cloudflare resources and connect your destination.</p><button class="button primary" type="button" id="review-button">Review setup <span aria-hidden="true">→</span></button></div>
+    </section>
+
+    <section id="review" class="page" hidden>
+      <div class="heading">
+        <div class="eyebrow">02 / Setup review</div>
+        <h1>Review before you install.</h1>
+        <p>Choose an account and review the changes before applying them.</p>
+      </div>
+      <div class="columns review-columns">
+        <form id="installation" class="settings">
+          <div class="panel padded">
+            <h2>Cloudflare account</h2>
+            <p class="caption">Create a token scoped to the selected account with Workers Scripts Edit and Queues Edit. <a href="https://developers.cloudflare.com/fundamentals/api/get-started/create-token/" target="_blank" rel="noreferrer">Create a token ↗</a></p>
+            <div class="pair">
+              <label>Installation name <span aria-hidden="true">*</span><input id="install-name" required autocomplete="off" maxlength="41"></label>
+              <label>Cloudflare account ID <span aria-hidden="true">*</span><input id="account" required autocomplete="off" spellcheck="false" maxlength="32"></label>
+            </div>
+            <label>Cloudflare API token <span aria-hidden="true">*</span><input id="token" required type="password" autocomplete="off"></label>
+          </div>
+          <div class="panel padded">
+            <h2>Connect your destination</h2>
+            <p class="caption" id="webhook-help"></p>
+            <label>Webhook URL <span aria-hidden="true">*</span><input id="webhook" required type="password" autocomplete="off" placeholder="https://…"></label>
+            <label id="headers-field" hidden>HTTP headers<textarea id="headers" rows="2" spellcheck="false" autocomplete="off" placeholder='{"Authorization": "Bearer …"}'></textarea></label>
+            <label id="body-field" hidden>Custom JSON body<textarea id="webhook-body" rows="2" spellcheck="false" autocomplete="off" placeholder='{"text": "{{title}}", "event": "{{event}}"}'></textarea></label>
+          </div>
+          <div class="panel padded">
+            <label class="toggle"><input id="report" type="checkbox"><span><strong>Enable HTTPS event reporting</strong><small>Use this for deployment and scheduled job reports from outside Cloudflare Queues.</small></span></label>
+            <label id="report-field" hidden>Reporting token <span aria-hidden="true">*</span><div class="input-action"><input id="report-token" type="password" autocomplete="off"><button type="button" class="button subtle" id="generate-token">Generate</button></div></label>
+          </div>
+          <div class="button-row"><button class="button primary" type="submit">Install notifier</button><button class="button subtle" id="preflight" type="button">Check account access</button></div>
+        </form>
+        <aside class="panel">
+          <div class="panel-heading"><h2>Installation plan</h2><span class="tag">Database-free</span></div>
+          <div class="padded" id="plan"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="diagnostics" class="page" hidden>
+      <div class="heading">
+        <div class="eyebrow">03 / Diagnostics</div>
+        <h1>Check your connection.</h1>
+        <p>Verify the installation, send a test, and inspect failures in Cloudflare.</p>
+      </div>
+      <div class="columns">
+        <div class="panel padded diagnostics-panel">
+          <h2>Installation checks</h2>
+          <p class="caption" id="check-details">Use the Cloudflare account and token from Setup review.</p>
+          <div id="checks"></div>
+          <div class="button-row"><button class="button primary" type="button" id="check">Check installation</button><button class="button subtle" type="button" id="test">Send test message</button></div>
+        </div>
+        <aside class="panel padded diagnostics-panel">
+          <h2>Investigate delivery</h2>
+          <p>Worker logs show delivery outcomes. Messages that exhaust retries stay in the failed-delivery queue until its retention period expires.</p>
+          <div id="dashboard-links" class="button-row"></div>
+          <div id="report-url"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer class="frame footer"><span>Cloudflare Notifier</span><a href="https://github.com/notice-cx/cloudflare-notifier" target="_blank" rel="noreferrer">Documentation ↗</a></footer>
+</body>
+</html>

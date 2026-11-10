@@ -1,0 +1,22 @@
+{
+  "name": "cloudflare-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "setup": "node setup/server.mjs",
+    "plan": "node setup/cli.mjs plan",
+    "install:notifier": "node setup/cli.mjs install",
+    "report": "node setup/report.mjs",
+    "test": "node --test test/*.test.mjs",
+    "types": "wrangler types --strict-vars=false && wrangler types --config wrangler.tail.jsonc --env-interface TailEnv --include-main-module=false --include-runtime=false --strict-vars=false worker-tail-configuration.d.ts",
+    "check": "npm run types && tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "wrangler": "4.160.0"
+  }
+}

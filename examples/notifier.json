@@ -1,0 +1,16 @@
+{
+  "name": "cloudflare-notifier",
+  "accountId": "",
+  "destination": "discord",
+  "style": "detailed",
+  "role": "",
+  "reportEndpoint": false,
+  "rules": [
+    {
+      "worker": "checkout-api",
+      "environment": "Production",
+      "branch": "main",
+      "events": ["build.failed", "build.succeeded"]
+    }
+  ]
+}

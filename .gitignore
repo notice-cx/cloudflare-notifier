@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.notifier/
+.env*
+.dev.vars*
+notifier.local.json
+dist/
+.DS_Store
+worker-configuration.d.ts
+worker-tail-configuration.d.ts

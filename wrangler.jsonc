@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cloudflare-notifier",
+  "main": "src/notifier.ts",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": { "NOTIFIER_SETTINGS": "{}" },
+  "secrets": { "required": ["WEBHOOK_URL"] },
+  "queues": {
+    "producers": [
+      { "binding": "EVENTS", "queue": "cloudflare-notifier-events" },
+      { "binding": "FAILED", "queue": "cloudflare-notifier-failed" }
+    ],
+    "consumers": [
+      {
+        "queue": "cloudflare-notifier-events",
+        "max_batch_size": 10,
+        "max_batch_timeout": 2,
+        "max_concurrency": 1,
+        "max_retries": 4,
+        "dead_letter_queue": "cloudflare-notifier-failed"
+      }
+    ]
+  }
+}
