@@ -76,6 +76,15 @@ export async function savedSettings(name = "cloudflare-notifier", directory = pr
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
 }
 
+function isNotifierConsumer(consumer, workerName) {
+  if (consumer.type !== undefined && consumer.type !== "worker") return false;
+  // Wrangler also receives script and service on queue consumer records.
+  const scriptName = consumer.script_name ?? consumer.script;
+  if (scriptName !== undefined) return scriptName === workerName;
+  return consumer.service === workerName &&
+    (consumer.environment === undefined || consumer.environment === "production");
+}
+
 async function inspect(settings, client, dir) {
   const { resources, subscriptions: requestedBuilds, runtime: requestedRuntime } = planFor(settings);
   const needsInventory = requestedBuilds.some(({ worker }) => worker === ALL_WORKERS) || requestedRuntime.includes(ALL_WORKERS);
@@ -97,8 +106,11 @@ async function inspect(settings, client, dir) {
   if (!journal && (worker || tail || events || failed)) {
     throw new Error("A Worker or queue already uses this installation name. Choose a new name or run setup from the original installation directory.");
   }
-  if (events?.consumers?.some((consumer) => consumer.type !== "worker" || consumer.script_name !== resources.worker) || failed?.consumers_total_count > 0) {
-    throw new Error("One of the queues has a consumer outside this installation. Review its connections in Cloudflare.");
+  if (events?.consumers?.some((consumer) => !isNotifierConsumer(consumer, resources.worker))) {
+    throw new Error(`Queue "${resources.events}" has an unexpected consumer. Check its consumers in Cloudflare. This queue should only connect to "${resources.worker}".`);
+  }
+  if (failed?.consumers_total_count > 0 || failed?.consumers?.length > 0) {
+    throw new Error(`Queue "${resources.failed}" has a consumer. Check its connections in Cloudflare. This queue should hold failed messages for inspection.`);
   }
   const missing = selected.filter((name) => !monitored.get(name));
   if (missing.length) throw new Error(`Worker not found in this account: ${missing.join(", ")}.`);
@@ -119,7 +131,7 @@ export async function preflight(input, secrets, options = {}) {
 function diagnostics(settings, snapshot) {
   const { plan, worker, events, failed, tail, subdomain, monitored } = snapshot;
   const { resources } = plan;
-  const ready = Boolean(worker && events?.consumers?.some((consumer) => consumer.script_name === resources.worker));
+  const ready = Boolean(worker && events?.consumers?.some((consumer) => isNotifierConsumer(consumer, resources.worker)));
   return {
     plan,
     ready,

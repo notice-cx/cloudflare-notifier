@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { defaults } from "../lib/settings.mjs";
-import { install, preflight } from "../setup/install.mjs";
+import { install, preflight, testDestination } from "../setup/install.mjs";
 import { setupServer } from "../setup/server.mjs";
 
 const settings = { ...defaults, accountId: "1".repeat(32) };
@@ -15,6 +15,8 @@ test("installation resumes after a failure and leaves credentials out of project
   t.after(() => rm(directory, { recursive: true, force: true }));
   const queues = new Map();
   const subs = [];
+  const tests = [];
+  let interrupted = false;
   const workers = new Set(["checkout-api", "billing-api"]);
   const client = {
     workers: async () => [...workers].map((id) => ({ id })),
@@ -28,9 +30,14 @@ test("installation resumes after a failure and leaves credentials out of project
     },
     subscriptions: async () => subs,
     createSubscription: async (queueId, worker, events) => {
+      if (worker === "checkout-api" && !interrupted) {
+        interrupted = true;
+        throw new Error("simulated subscription failure");
+      }
       subs.push({ id: String(subs.length + 1), enabled: true, name: `notifier-${worker}`, source: { type: "workersBuilds.worker", worker_name: worker }, destination: { queue_id: queueId }, events });
     },
     updateSubscription: async () => { assert.fail("This fixture should not need a subscription update"); },
+    test: async (id) => tests.push(id),
   };
   await assert.rejects(install(settings, credentials, { directory, client, deploy: async () => { throw new Error("simulated deploy failure"); } }), /simulated deploy failure/);
   let secretPath;
@@ -40,10 +47,12 @@ test("installation resumes after a failure and leaves credentials out of project
     assert.equal(config.queues.consumers[0].dead_letter_queue, "cloudflare-notifier-failed");
     assert.ok(!JSON.stringify(config).includes(credentials.webhook));
     workers.add(config.name);
-    queues.get("cloudflare-notifier-events").consumers = [{ type: "worker", script_name: config.name }];
+    queues.get("cloudflare-notifier-events").consumers = [{ type: "worker", script: config.name }];
     secretPath = secretFile;
     assert.equal(JSON.parse(await readFile(secretFile, "utf8")).WEBHOOK_URL, credentials.webhook);
   };
+  await assert.rejects(install(settings, credentials, { directory, client, deploy }), /simulated subscription failure/);
+  assert.deepEqual(subs.map(({ source }) => source.worker_name), ["billing-api"]);
   await install(settings, credentials, { directory, client, deploy });
   assert.deepEqual(subs.map(({ source }) => source.worker_name), ["billing-api", "checkout-api"]);
   workers.add("new-worker");
@@ -55,6 +64,28 @@ test("installation resumes after a failure and leaves credentials out of project
   const result = await preflight(specific, credentials, { directory, client: { ...client, workers: undefined } });
   assert.deepEqual(result.plan.subscriptions.map(({ worker }) => worker), ["checkout-api"]);
   await assert.rejects(readFile(secretPath), { code: "ENOENT" });
+
+  const events = queues.get("cloudflare-notifier-events");
+  const workerConsumers = [
+    { type: "worker", script: settings.name },
+    { type: "worker", service: settings.name, environment: "production" },
+    { script_name: settings.name },
+  ];
+  for (const consumer of workerConsumers) {
+    events.consumers = [consumer];
+    await testDestination(settings, credentials, { directory, client });
+  }
+  assert.deepEqual(tests, Array(workerConsumers.length).fill(events.queue_id));
+
+  for (const consumer of [
+    { type: "worker", script: "unrelated-worker" },
+    { type: "http_pull", script_name: settings.name },
+    { type: "worker", service: settings.name, environment: "staging" },
+  ]) {
+    events.consumers = [consumer];
+    await assert.rejects(testDestination(settings, credentials, { directory, client }), /cloudflare-notifier-events.*unexpected consumer/);
+  }
+  assert.equal(tests.length, workerConsumers.length);
 });
 
 test("demo mode cannot call an installer and cross-origin requests are denied", async (t) => {
